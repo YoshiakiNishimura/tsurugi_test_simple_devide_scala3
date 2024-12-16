@@ -27,10 +27,13 @@ import scala.jdk.CollectionConverters._
 import scala.util.{Using, Try, Success, Failure}
 import java.net.URI
 
-private val Connect = "ipc://tsurugi"
+private val Connect = "ipc://tsurugi2"
 private val TableName = "test_table"
 private val TableName2 = "test_table2"
-private val Columncount = 1_0
+private val Columncount = 128
+private val startHex = 0x1000000
+private val endHex = 0x2000000
+private val divide = 128
 class Setting(val tg: TgTmSetting, val name: String) {
   def getName: String = name
   def getTgTmSetting: TgTmSetting = tg
@@ -60,31 +63,13 @@ def insert(kvs: KvsClient, table: Table)(implicit
   println(s"insert ${table.getTableName} column ${table.getColumnCount}")
   Try {
     val tx = kvs.beginTransaction().await
-/*
-000000 00000000
-100000 16777216
-200000 33554432
-300000 50331648
-400000 67108864
-500000 83886080
-600000 100663296
-700000 117440512
-800000 134217728
-900000 150994944
-a00000 167772160
-b00000 184549376
-c00000 201326592
-d00000 218103808
-e00000 234881024
-f00000  251658240
-*/
-    val startPoints = Seq(16777216,17825792,18874368,19922944,20971520,22020096
-      ,23068672,24117248,25165824,26214400,27262976,28311552,29360128,30408704
-      ,31457280,32505856)
-    val step = 1000000
-
-    startPoints.foreach { start =>
-    val range = start until (start + step)
+    val range_size = endHex - startHex
+    val step_size = range_size / (divide)
+    val splitPoints = (0 until divide).map(i => startHex + i * step_size)
+    val point_column = Columncount / divide
+    splitPoints.foreach { start =>
+    println(f"0x${start}%X")
+    val range = start until (start + point_column )
     range.foreach { i =>
         val record = table.createRecordBuffer(i)
         kvs.put(tx, table.getTableName, record).await
