@@ -51,7 +51,7 @@ std::vector<simple_key_distribution::pivot_type> simple_key_distribution::comput
         case 31: start = 0x08; step = 0x08; break;
         case 63: start = 0x04; step = 0x04; break;
         case 127: start = 0x02; step = 0x02; break;
-        case 254: start = 0x01; step = 0x01; break;
+        case 255: start = 0x01; step = 0x01; break;
         default: return {};
     }
     for (std::size_t i = 0; i < max_count; ++i) {
