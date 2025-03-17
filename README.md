@@ -21,9 +21,11 @@ cp scan jogasaki/src/jogasaki/executor/process/impl/ops/scan.cpp
 
 and modify tsurugi.ini
 
+```
 [sql]
     // A number greater than the insert count.
     scan_block_size=1000000000
+```
 
 ### modify tsurugi.ini
 
@@ -51,8 +53,10 @@ private val Columncount = 16000000
 
 ### sbt command
 
+```
 sbt compile
 sbt run
+```
 
 ### sql example
 
