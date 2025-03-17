@@ -17,6 +17,7 @@
 #include "simple_key_distribution.h"
 
 #include <algorithm>
+#include <iomanip>
 
 namespace jogasaki::dist {
 
@@ -34,64 +35,47 @@ std::optional<double> simple_key_distribution::estimate_value_size(range_type co
 
 std::vector<simple_key_distribution::pivot_type> simple_key_distribution::compute_pivots(
     size_type max_count, range_type const& range) {
+
     std::vector<pivot_type> pivots;
     static const unsigned char prefix = 0x81;
-#if 1
-    if (max_count == 1) {
-        std::string key = {static_cast<char>(prefix), static_cast<char>(0x80)};
+
+    std::vector<uint8_t> offsets;
+    uint8_t step = 0;
+    uint8_t start = 0;
+
+    switch (max_count) {
+        case 1:  start = 0x80; step = 0x80; break;
+        case 3:  start = 0x40; step = 0x40; break;
+        case 7:  start = 0x20; step = 0x20; break;
+        case 15: start = 0x10; step = 0x10; break;
+        case 31: start = 0x08; step = 0x08; break;
+        case 63: start = 0x04; step = 0x04; break;
+        case 127: start = 0x02; step = 0x02; break;
+        case 254: start = 0x01; step = 0x01; break;
+        default: return {};
+    }
+    for (std::size_t i = 0; i < max_count; ++i) {
+        uint8_t value = start + i * step;
+        offsets.push_back(value);
+#if 0
+        std::cout << "offset: 0x"
+                  << std::hex << std::setw(2) << std::setfill('0')
+                  << static_cast<int>(value) << std::endl;
+#endif
+    }
+
+    pivots.reserve(offsets.size());
+
+    for (auto offset : offsets) {
+        std::string key = {static_cast<char>(prefix), static_cast<char>(offset)};
         pivot_type pivot(key.data(), key.size());
         if ((range.begin_key().empty() || pivot >= range.begin_key()) &&
             (range.end_key().empty() || pivot < range.end_key())) {
-        pivots.emplace_back(pivot);
-            }
-    }
-    if (max_count == 3) {
-        std::vector<uint8_t> offsets = {0x40, 0x80,0xc0};
-        for (auto offset : offsets) {
-            std::string key = {static_cast<char>(prefix), static_cast<char>(offset)};
-            pivot_type pivot(key.data(), key.size());
             pivots.emplace_back(pivot);
         }
     }
-
-    if (max_count == 7) {
-        std::vector<uint8_t> offsets = {0x20, 0x40, 0x60, 0x80, 0xa0, 0xc0, 0xe0};
-
-        for (auto offset : offsets) {
-            std::string key = {static_cast<char>(prefix), static_cast<char>(offset)};
-            pivot_type pivot(key.data(), key.size());
-            pivots.emplace_back(pivot);
-        }
-    }
-    if (max_count == 15) {
-        std::vector<uint8_t> offsets = {
-            0x10, 0x20, 0x30, 0x40, 0x50, 0x60, 0x70, 0x80, 0x90, 0xa0, 0xb0, 0xc0, 0xd0, 0xe0,0xf0};
-
-        for (auto offset : offsets) {
-            std::string key = {static_cast<char>(prefix), static_cast<char>(offset)};
-            pivot_type pivot(key.data(), key.size());
-            pivots.emplace_back(pivot);
-        }
-    }
-#else
-    for (int i = 0; i <= 0xff; ++i) {
-        std::string key = {static_cast<char>(prefix), static_cast<char>(i)};
-        pivot_type pivot(key.data(), key.size());
-
-        if ((range.begin_key().empty() || pivot >= range.begin_key()) &&
-            (range.end_key().empty() || pivot < range.end_key())) {
-            pivots.emplace_back(pivot);
-        }
-    }
-
-    if (max_count < pivots.size()) {
-        std::random_device rd;
-        std::mt19937 g(rd());
-        std::shuffle(pivots.begin(), pivots.end(), g);
-        pivots.resize(max_count);
-    }
-
-    std::sort(pivots.begin(), pivots.end());
+#if 0
+    std::cerr << "pivots " << pivots.size() << std::endl;
 #endif
     return pivots;
 }

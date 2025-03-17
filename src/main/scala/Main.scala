@@ -27,10 +27,10 @@ import scala.jdk.CollectionConverters._
 import scala.util.{Using, Try, Success, Failure}
 import java.net.URI
 
-private val Connect = "ipc://tsurugi2"
+private val Connect = "ipc://tsurugi"
 private val TableName = "test_table"
 private val TableName2 = "test_table2"
-private val Columncount = 128
+private val Columncount = 16000000
 private val startHex = 0x1000000
 private val endHex = 0x2000000
 private val divide = 128
