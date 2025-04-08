@@ -32,51 +32,37 @@ std::optional<double> simple_key_distribution::estimate_key_size(range_type cons
 std::optional<double> simple_key_distribution::estimate_value_size(range_type const& /*range*/) {
     return std::nullopt;
 }
-
 std::vector<simple_key_distribution::pivot_type> simple_key_distribution::compute_pivots(
     size_type max_count, range_type const& range) {
 
     std::vector<pivot_type> pivots;
-    static const unsigned char prefix = 0x81;
 
-    std::vector<uint8_t> offsets;
-    uint8_t step = 0;
-    uint8_t start = 0;
+    if (max_count == 0) return pivots;
 
-    switch (max_count) {
-        case 1:  start = 0x80; step = 0x80; break;
-        case 3:  start = 0x40; step = 0x40; break;
-        case 7:  start = 0x20; step = 0x20; break;
-        case 15: start = 0x10; step = 0x10; break;
-        case 31: start = 0x08; step = 0x08; break;
-        case 63: start = 0x04; step = 0x04; break;
-        case 127: start = 0x02; step = 0x02; break;
-        case 255: start = 0x01; step = 0x01; break;
-        default: return {};
-    }
-    for (std::size_t i = 0; i < max_count; ++i) {
-        uint8_t value = start + i * step;
-        offsets.push_back(value);
+    constexpr int total_range = 512;  // 0x81 0x00 - 0x82 0xFF
+    int step = total_range / (max_count + 1);
+
+    for (std::size_t i = 1; i <= max_count; ++i) {
+        int value = i * step; // absolute offset: 0 ~ 511
+        uint8_t hi = static_cast<uint8_t>(0x81 + (value / 256));  // 0x81 or 0x82
+        uint8_t lo = static_cast<uint8_t>(value % 256);
+
+        std::string key = {static_cast<char>(hi), static_cast<char>(lo)};
 #if 0
-        std::cout << "offset: 0x"
-                  << std::hex << std::setw(2) << std::setfill('0')
-                  << static_cast<int>(value) << std::endl;
+	std::cerr << "key =";
+        for (unsigned char c : key) {
+            std::cerr << " 0x" << std::hex << std::uppercase << std::setw(2)
+                      << std::setfill('0') << static_cast<int>(c);
+        }
+        std::cerr << std::dec << std::endl;
 #endif
-    }
-
-    pivots.reserve(offsets.size());
-
-    for (auto offset : offsets) {
-        std::string key = {static_cast<char>(prefix), static_cast<char>(offset)};
         pivot_type pivot(key.data(), key.size());
         if ((range.begin_key().empty() || pivot >= range.begin_key()) &&
             (range.end_key().empty() || pivot < range.end_key())) {
             pivots.emplace_back(pivot);
         }
     }
-#if 0
-    std::cerr << "pivots " << pivots.size() << std::endl;
-#endif
+
     return pivots;
 }
 
