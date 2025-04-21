@@ -21,6 +21,9 @@
 #include <vector>
 #include <boost/assert.hpp>
 
+#include <fstream>
+#include <filesystem>
+#include <sstream>
 #include <thread>
 #include <takatori/descriptor/element.h>
 #include <takatori/relation/sort_direction.h>
@@ -55,6 +58,7 @@
 #include <jogasaki/utils/handle_generic_error.h>
 #include <jogasaki/utils/handle_kvs_errors.h>
 #include <jogasaki/utils/modify_status.h>
+#include <jogasaki/metrics/decode_timings.h>
 
 #include "context_helper.h"
 #include "details/encode_key.h"
@@ -65,6 +69,8 @@
 namespace jogasaki::executor::process::impl::ops {
 
 using takatori::util::unsafe_downcast;
+using jogasaki::metrics::decode_timings;
+namespace fs = std::filesystem;
 struct scope_timer {
     std::chrono::steady_clock::time_point start_;
     std::chrono::nanoseconds& accumulator_;
@@ -154,9 +160,9 @@ operation_status scan::operator()(  //NOLINT(readability-function-cognitive-comp
     abstract::task_context* context
 ) {
 using clock = std::chrono::high_resolution_clock;
+    decode_timings timings{};
     auto start_time = clock::now();
-    auto thread_id = std::this_thread::get_id();
-    auto start_ms = std::chrono::duration_cast<std::chrono::milliseconds>(start_time.time_since_epoch()).count();
+    timings.start_ms  = std::chrono::duration_cast<std::chrono::milliseconds>(start_time.time_since_epoch());
 
     if (ctx.inactive()) {
         return {operation_status_kind::aborted};
@@ -180,18 +186,11 @@ using clock = std::chrono::high_resolution_clock;
     auto scan_block_size = global::config_pool()->scan_block_size();
     auto scan_yield_interval = static_cast<std::int64_t>(global::config_pool()->scan_yield_interval());
     auto previous_time = std::chrono::steady_clock::now();
-    std::chrono::nanoseconds cancel_check{0};
-    std::chrono::nanoseconds kvs_next{0};
-    std::chrono::nanoseconds read_key_ms{0};
-    std::chrono::nanoseconds read_value{0};
-    std::chrono::nanoseconds field_process{0};
-    std::chrono::nanoseconds downstream_process{0};
-    std::chrono::nanoseconds yield_check{0};
     auto start_time6 = clock::now();
     auto cancel_enabled = utils::request_cancel_enabled(request_cancel_kind::scan);
     while(true) {
     {
-        scope_timer t(cancel_check);
+        scope_timer t(timings.cancel_check);
         if(cancel_enabled && ctx.req_context()) {
             auto& res_src = ctx.req_context()->req_info().response_source();
             if(res_src && res_src->check_cancel()) {
@@ -203,7 +202,7 @@ using clock = std::chrono::high_resolution_clock;
         }
     }
     {
-        scope_timer t(kvs_next);
+        scope_timer t(timings.kvs_next);
         if((st = ctx.it_->next()) != status::ok) {
             handle_kvs_errors(*ctx.req_context(), st);
             break;
@@ -212,7 +211,7 @@ using clock = std::chrono::high_resolution_clock;
     std::string_view k{};
     std::string_view v{};
     {
-        scope_timer t(read_key_ms);
+        scope_timer t(timings.read_key_ms);
         utils::checkpoint_holder cp{resource};
         if((st = ctx.it_->read_key(k)) != status::ok) {
             utils::modify_concurrent_operation_status(*ctx.transaction(), st, true);
@@ -224,7 +223,7 @@ using clock = std::chrono::high_resolution_clock;
         }
     }
     {
-        scope_timer t(read_value);
+        scope_timer t(timings.read_value);
         if((st = ctx.it_->read_value(v)) != status::ok) {
             utils::modify_concurrent_operation_status(*ctx.transaction(), st, true);
             if (st == status::not_found) {
@@ -235,7 +234,7 @@ using clock = std::chrono::high_resolution_clock;
         }
 	}
     {
-        scope_timer t(field_process);
+        scope_timer t(timings.field_process);
         if(st = field_mapper_.process(k, v, target, *ctx.stg_, *ctx.tx_, resource, *ctx.req_context());
            st != status::ok) {
             handle_kvs_errors(*ctx.req_context(), st);
@@ -243,7 +242,7 @@ using clock = std::chrono::high_resolution_clock;
         }
 	}
     {
-        scope_timer t(downstream_process);
+        scope_timer t(timings.downstream_process);
         if (downstream_) {
             if(auto st2 = unsafe_downcast<record_operator>(downstream_.get())->process_record(context); !st2) {
                 ctx.abort();
@@ -253,7 +252,7 @@ using clock = std::chrono::high_resolution_clock;
         }
     }
     {
-        scope_timer t(yield_check);
+        scope_timer t(timings.yield_check);
         if (scan_block_size != 0 && scan_block_size <= loop_count ){
             loop_count = 0;
             auto current_time = std::chrono::steady_clock::now();
@@ -271,43 +270,20 @@ using clock = std::chrono::high_resolution_clock;
         loop_count++;
     }
     }
-    auto loop_time = std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - start_time6).count();
+    
+    timings.loop_time = std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - start_time6);
     auto end_time = clock::now();
-    auto end_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time.time_since_epoch()).count();
-    auto duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time).count();
-    auto measured_total = cancel_check + kvs_next + read_key_ms + read_value +
-    field_process + downstream_process + yield_check;
-    auto unmeasured_time = loop_time - measured_total.count();
-#if 0
-    std::cerr << "thread," << thread_id
-              << ",START," << start_ms
-              << ",END,"   << end_ms
-              << ",DURATION," << duration_ms
-              << ",loop_time," << loop_time
-              << ",unmeasured_time," << unmeasured_time
-              << ",cancel_check,"   << cancel_check.count()
-              << ",kvs_next,"   << kvs_next.count()
-              << ",read_key,"   << read_key_ms.count()
-              << ",read_value,"   << read_value.count()
-              << ",field_process,"   << field_process.count()
-              << ",downstream_process,"   << downstream_process.count()
-              << ",yield_check,"   << yield_check.count()
-              << std::endl;
-#endif
-    std::cerr << thread_id
-              << "," << start_ms
-              << ","   << end_ms
-              << "," << duration_ms
-              << "," << loop_time
-              << "," << unmeasured_time
-              << ","   << cancel_check.count()
-              << ","   << kvs_next.count()
-              << ","   << read_key_ms.count()
-              << ","   << read_value.count()
-              << ","   << field_process.count()
-              << ","   << downstream_process.count()
-              << ","   << yield_check.count()
-              << std::endl;
+    timings.end_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time.time_since_epoch());
+    timings.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    auto thread_id = std::this_thread::get_id();
+    std::ostringstream oss;
+    oss << thread_id;
+    std::string thread_id_str = oss.str();
+    const char* home = std::getenv("HOME");
+    fs::path output_path = fs::path(home) / ("timing_thread_" + thread_id_str + ".csv");
+    std::ofstream out(output_path);
+    timings.dump_csv(out);
+    //timings.dump_csv(std::cerr);
     finish(context);
     if (st != status::not_found) {
         return error_abort(ctx, st);
