@@ -5,31 +5,28 @@
 namespace jogasaki::metrics {
 
 struct decode_timings {
-    using duration_type                   = std::chrono::nanoseconds;
-    duration_type index_field_mapper_process = duration_type::zero();
-    duration_type populate_field_variables = duration_type::zero();
-    duration_type decode_fields = duration_type::zero();
-    duration_type total                   = duration_type::zero();
-    duration_type consume_stream          = duration_type::zero();
-    duration_type consume_stream_nullable = duration_type::zero();
-    duration_type decode                  = duration_type::zero();
-    duration_type decode_nullable         = duration_type::zero();
-    duration_type set_null                = duration_type::zero();
-    void dump(std::ostream& out) const noexcept {
-        out << "decode_timings:\n"
-            << "  total:          " << total.count() << " ns\n"
-            << "  consume_stream:          " << consume_stream.count() << " ns\n"
-            << "  consume_stream_nullable: " << consume_stream_nullable.count() << " ns\n"
-            << "  decode:                 " << decode.count() << " ns\n"
-            << "  decode_nullable:        " << decode_nullable.count() << " ns\n"
-            << "  set_null:               " << set_null.count() << " ns\n";
-    }
+    using duration_type              = std::chrono::nanoseconds;
+    duration_type start_ms           = duration_type::zero();
+    duration_type end_ms             = duration_type::zero();
+    duration_type duration_ms        = duration_type::zero();
+    duration_type loop_time          = duration_type::zero();
+    duration_type cancel_check       = duration_type::zero();
+    duration_type kvs_next           = duration_type::zero();
+    duration_type read_key_ms        = duration_type::zero();
+    duration_type read_value         = duration_type::zero();
+    duration_type field_process      = duration_type::zero();
+    duration_type downstream_process = duration_type::zero();
+    duration_type yield_check        = duration_type::zero();
+    void dump(std::ostream& out) const noexcept { out << "decode_timings:\n"; }
     void dump_csv(std::ostream& out) const noexcept {
-        out << total.count() << "," << index_field_mapper_process.count() << "," <<
-        populate_field_variables.count() <<"," << decode_fields.count()<<"," 
-        << consume_stream.count() << ","
-            << consume_stream_nullable.count() << "," << decode.count() << ","
-            << decode_nullable.count() << "," << set_null.count() << "\n";
+        auto measured_total = cancel_check + kvs_next + read_key_ms + read_value + field_process +
+                              downstream_process + yield_check;
+        auto unmeasured_time = loop_time.count() - measured_total.count();
+        out << start_ms.count() << "," << end_ms.count() << "," << duration_ms.count() << ","
+            << loop_time.count() << "," << unmeasured_time << "," << cancel_check.count()
+            << "," << kvs_next.count() << "," << read_key_ms.count() << "," << read_value.count()
+            << "," << field_process.count() << "," << downstream_process.count() << ","
+            << yield_check.count() << std::endl;
     }
 };
 
