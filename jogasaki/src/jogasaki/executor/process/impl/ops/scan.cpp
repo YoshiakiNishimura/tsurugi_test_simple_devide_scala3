@@ -269,12 +269,16 @@ using clock = std::chrono::high_resolution_clock;
         }
         loop_count++;
     }
+
+
+    
     }
     
     timings.loop_time = std::chrono::duration_cast<std::chrono::nanoseconds>(clock::now() - start_time6);
     auto end_time = clock::now();
     timings.end_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time.time_since_epoch());
     timings.duration_ms = std::chrono::duration_cast<std::chrono::milliseconds>(end_time - start_time);
+    timings.loop_count = loop_count;
     auto thread_id = std::this_thread::get_id();
     std::ostringstream oss;
     oss << thread_id;
