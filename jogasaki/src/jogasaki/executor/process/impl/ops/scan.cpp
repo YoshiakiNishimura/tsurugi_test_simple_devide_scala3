@@ -235,7 +235,7 @@ using clock = std::chrono::high_resolution_clock;
 	}
     {
         scope_timer t(timings.field_process);
-        if(st = field_mapper_.process(k, v, target, *ctx.stg_, *ctx.tx_, resource, *ctx.req_context());
+        if(st = field_mapper_.process(k, v, target, *ctx.stg_, *ctx.tx_, resource, *ctx.req_context(),&timings);
            st != status::ok) {
             handle_kvs_errors(*ctx.req_context(), st);
             break;
